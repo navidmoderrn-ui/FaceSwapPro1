@@ -9,11 +9,11 @@ on:
       - master
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
-    name: Build Android APK
+    name: Build and Publish Android APK
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
@@ -22,7 +22,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
@@ -43,11 +43,12 @@ jobs:
         shell: bash
         run: |
           set -e
+
           ZIP_FILE=$(find . -maxdepth 1 -type f \
             -name 'FaceSwapPro_GitHub*.zip' -print -quit)
 
           if [ -z "$ZIP_FILE" ]; then
-            echo "ERROR: Project ZIP not found"
+            echo "ERROR: Project ZIP not found in repository root."
             exit 1
           fi
 
@@ -55,8 +56,8 @@ jobs:
           unzip -oq "$ZIP_FILE" -d extracted
 
           if [ ! -f extracted/FaceSwapPro/app/build.gradle.kts ]; then
-            echo "ERROR: Android project files not found in ZIP"
-            find extracted -maxdepth 3 -type f | head -80
+            echo "ERROR: Android project files not found."
+            find extracted -maxdepth 4 -type f | head -100
             exit 1
           fi
 
@@ -64,15 +65,14 @@ jobs:
         shell: bash
         run: |
           set -e
+
           FILE="extracted/FaceSwapPro/app/build.gradle.kts"
 
-          sed -i 's/java\.net\.URI(url)/URI(url)/' "$FILE"
+          sed -i 's/java\.net\.URI(url)/URI(url)/g' "$FILE"
 
           if ! grep -q '^import java\.net\.URI$' "$FILE"; then
             sed -i '1i import java.net.URI' "$FILE"
           fi
-
-          grep -n 'URI(url)' "$FILE"
 
       - name: Build debug APK
         working-directory: extracted/FaceSwapPro
@@ -85,3 +85,13 @@ jobs:
           path: extracted/FaceSwapPro/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 14
+
+      - name: Publish APK Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: apk-${{ github.run_number }}
+          name: FaceSwapPro APK ${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          files: extracted/FaceSwapPro/app/build/outputs/apk/debug/*.apk
+          fail_on_unmatched_files: true
+          make_latest: false
